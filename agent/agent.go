@@ -139,6 +139,7 @@ type delegate interface {
 	ResolveTokenAndDefaultMeta(secretID string, entMeta *structs.EnterpriseMeta, authzContext *acl.AuthorizerContext) (acl.Authorizer, error)
 	ResolveIdentityFromToken(secretID string) (bool, structs.ACLIdentity, error)
 	RPC(method string, args interface{}, reply interface{}) error
+	GRPCConn() (*grpc.ClientConn, error)
 	ACLsEnabled() bool
 	UseLegacyACLs() bool
 	SnapshotRPC(args *structs.SnapshotRequest, in io.Reader, out io.Writer, replyFn structs.SnapshotReplyFn) error
@@ -1395,6 +1396,8 @@ func (a *Agent) consulConfig() (*consul.Config, error) {
 	}
 
 	base.ConfigEntryBootstrap = a.config.ConfigEntryBootstrap
+
+	base.GRPCEnabled = a.config.EnableBackendStreaming
 
 	return base, nil
 }

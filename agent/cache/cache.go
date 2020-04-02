@@ -268,8 +268,7 @@ func (c *Cache) getWithIndex(t string, r Request, minIndex uint64) (interface{},
 		return c.fetchDirect(t, r, minIndex)
 	}
 
-	// Get the actual key for our entry
-	key := c.entryKey(t, &info)
+	key := makeEntryKey(t, info.Datacenter, info.Token, info.Key)
 
 	// First time through
 	first := true
@@ -279,6 +278,7 @@ func (c *Cache) getWithIndex(t string, r Request, minIndex uint64) (interface{},
 
 RETRY_GET:
 	// Get the type that we're fetching
+	// TODO: should this lookup of the type be before RETRY_GET?
 	c.typesLock.RLock()
 	tEntry, ok := c.types[t]
 	c.typesLock.RUnlock()
@@ -382,12 +382,6 @@ RETRY_GET:
 		// Timeout on the cache read, just return whatever we have.
 		return entry.Value, ResultMeta{Index: entry.Index}, nil
 	}
-}
-
-// entryKey returns the key for the entry in the cache. See the note
-// about the entry key format in the structure docs for Cache.
-func (c *Cache) entryKey(t string, r *RequestInfo) string {
-	return makeEntryKey(t, r.Datacenter, r.Token, r.Key)
 }
 
 func makeEntryKey(t, dc, token, key string) string {
@@ -633,15 +627,8 @@ func (c *Cache) fetchDirect(t string, r Request, minIndex uint64) (interface{}, 
 	}
 
 	// Fetch it with the min index specified directly by the request.
-	result, err := tEntry.Type.Fetch(FetchOptions{
-		MinIndex: minIndex,
-	}, r)
-	if err != nil {
-		return nil, ResultMeta{}, err
-	}
-
-	// Return the result and ignore the rest
-	return result.Value, ResultMeta{}, nil
+	result, err := tEntry.Type.Fetch(FetchOptions{MinIndex: minIndex}, r)
+	return result.Value, ResultMeta{}, err
 }
 
 func backOffWait(failures uint) time.Duration {
@@ -765,9 +752,13 @@ func (c *Cache) Prepopulate(t string, res FetchResult, dc, token, k string) erro
 	}
 	key := makeEntryKey(t, dc, token, k)
 	newEntry := cacheEntry{
-		Valid: true, Value: res.Value, State: res.State, Index: res.Index,
-		FetchedAt: time.Now(), Waiter: make(chan struct{}),
-		Expiry: &cacheEntryExpiry{Key: key, TTL: tEntry.Opts.LastGetTTL},
+		Valid:     true,
+		Value:     res.Value,
+		State:     res.State,
+		Index:     res.Index,
+		FetchedAt: time.Now(),
+		Waiter:    make(chan struct{}),
+		Expiry:    &cacheEntryExpiry{Key: key, TTL: tEntry.Opts.LastGetTTL},
 	}
 	c.entriesLock.Lock()
 	c.entries[key] = newEntry
